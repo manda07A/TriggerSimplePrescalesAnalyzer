@@ -23,9 +23,7 @@
 #include <iostream>
 #include <iomanip>
 #include <boost/foreach.hpp>
-#include <string>
-#include <fstream>
-
+using namespace std;
 
 #include "FWCore/Framework/interface/Frameworkfwd.h"
 #include "FWCore/Framework/interface/EDAnalyzer.h"
@@ -61,7 +59,7 @@ class TriggerSimplePrescalesAnalyzer : public edm::EDAnalyzer {
 
       virtual void beginRun(edm::Run const&, edm::EventSetup const&);
       virtual void analyze(const edm::Event&, const edm::EventSetup&);
-      virtual void analyzeSimplePrescales(const edm::Event&, const edm::EventSetup&, const std::string& triggerName);
+      virtual std::vector<int> analyzeSimplePrescales(const edm::Event&, const edm::EventSetup&, const std::string& triggerName);
       virtual void initPattern(const edm::TriggerResults & result,
                         const edm::EventSetup& iSetup,
                         const edm::TriggerNames & triggerNames);
@@ -101,10 +99,8 @@ class TriggerSimplePrescalesAnalyzer : public edm::EDAnalyzer {
 
       // ----------member data ---------------------------
       TTree *mtree;
-      std::vector<std::string> triggInfo;
-      ofstream myfile;
-      ifstream myfile2;
-
+      std::vector<int> triggervecs[1000];
+      
 };
 
 //
@@ -156,8 +152,13 @@ HLTPathsByName_()
   edm::Service<TFileService> fs;
   mtree = fs->make<TTree>("Events", "Events");
   
-  mtree->Branch("TriggInfo",&triggInfo);
-  mtree->GetBranch("TriggInfo")->SetTitle("Trigger Information");
+  unsigned int n = HLTPathsByName_.size();
+  
+  for(unsigned int i = 0; i<n; i++) {
+    std::string name = HLTPathsByName_[i];
+    mtree->Branch(name.c_str(), &triggervecs[i]);
+    mtree->GetBranch(name.c_str())->SetTitle("Trigger Information");
+  }
   
 }
 
@@ -184,8 +185,7 @@ void TriggerSimplePrescalesAnalyzer::beginRun(edm::Run const& iRun, edm::EventSe
 {
     using namespace std;
     using namespace edm;
-    myfile.open ("example.txt");
-    
+  
     bool changed(true);
     hltConfig_.init(iRun,iSetup,processName_,changed);
     
@@ -211,6 +211,11 @@ void TriggerSimplePrescalesAnalyzer::analyze(const edm::Event& iEvent, const edm
 {
    using namespace edm;
    using namespace std;
+   unsigned int n = HLTPathsByName_.size();
+   
+   for (unsigned int i=0; i!=n; ++i) {
+       triggervecs[i].clear();
+   }
    
    // Get event products: 
    // In the following, the code is trying to access the information 
@@ -251,11 +256,15 @@ void TriggerSimplePrescalesAnalyzer::analyze(const edm::Event& iEvent, const edm
   
 
    //Loop over all triggers in the pattern
-   unsigned int n = HLTPathsByName_.size();
    
    for (unsigned int i=0; i!=n; ++i) {
-       analyzeSimplePrescales(iEvent,iSetup,HLTPathsByName_[i]);
+       triggervecs[i] = analyzeSimplePrescales(iEvent,iSetup,HLTPathsByName_[i]);
+       cout << "Estado: " << triggervecs[i].at(0) << endl;
+       cout << "L1T: " << triggervecs[i].at(1) << endl;
+       cout << "LHT: " << triggervecs[i].at(2) << endl;
    }
+   
+   mtree->Fill();
 
    return;
 
@@ -265,7 +274,7 @@ void TriggerSimplePrescalesAnalyzer::analyze(const edm::Event& iEvent, const edm
 
 
 //---------------------------Actual trigger analysis-------------
-void TriggerSimplePrescalesAnalyzer::analyzeSimplePrescales(const edm::Event& iEvent, const edm::EventSetup& iSetup, const std::string& triggerName) 
+std::vector<int> TriggerSimplePrescalesAnalyzer::analyzeSimplePrescales(const edm::Event& iEvent, const edm::EventSetup& iSetup, const std::string& triggerName) 
 //-----------------------------------------------------------------
 {
 
@@ -273,6 +282,8 @@ void TriggerSimplePrescalesAnalyzer::analyzeSimplePrescales(const edm::Event& iE
   using namespace edm;
   using namespace reco;
   using namespace trigger;
+  
+  std::vector<int> temp(3,0);
 
   cout<<"Currently analyzing trigger "<<triggerName<<endl;
 
@@ -285,7 +296,7 @@ void TriggerSimplePrescalesAnalyzer::analyzeSimplePrescales(const edm::Event& iE
   // abort on invalid trigger name
   if (triggerIndex>=n) {
     cout << "Trigger path"<< triggerName << " not found!" << endl;
-    return;
+    return temp;
   }
 
   
@@ -328,16 +339,27 @@ void TriggerSimplePrescalesAnalyzer::analyzeSimplePrescales(const edm::Event& iE
        
   //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
   
-  myfile << "analyzeSimplePrescales: path " 
-         << triggerName << " [" << triggerIndex << "] " 
-         << "prescales L1T,HLT: " << prescales.first << "," << prescales.second << "  |  " 
-         << " Trigger path status:" 
-         << " WasRun=" << triggerResultsHandle_->wasrun(triggerIndex) 
-         << " Accept=" << triggerResultsHandle_->accept(triggerIndex) 
-         << " Error =" << triggerResultsHandle_->error(triggerIndex) 
-         << endl; 
+  int wr = triggerResultsHandle_->wasrun(triggerIndex);
+  int acc = triggerResultsHandle_->accept(triggerIndex);
+  int err = triggerResultsHandle_->error(triggerIndex);
+  
+  if (wr == 1 && acc == 0 && err == 0){
+     temp.insert(temp.begin(), 0);  //Was Run State.
+  }
+  
+  if (wr == 1 && acc == 1 && err == 0){
+     temp.insert(temp.begin(), 1);; //Accepted State.
+  }
+  
+  if (err == 1){
+     temp.insert(temp.begin(), 2);; //Error State.
+  }
+  
+  temp.insert(temp.begin() + 1, prescales.first); //l1 prescale
+  
+  temp.insert(temp.begin() + 2, prescales.second);;  //hlt prescale
 
-  return;
+  return temp;
 }
 
 //--------------------------analyzeSimplePrescales() ------------------------
@@ -401,18 +423,6 @@ TriggerSimplePrescalesAnalyzer::endJob()
 // ------------ method called when ending the processing of a run  ------------
 void TriggerSimplePrescalesAnalyzer::endRun(edm::Run const&, edm::EventSetup const&)
 {
-myfile.close();
-
-myfile2.open ("example.txt");
-std::string temp;
-  
-while ( getline (myfile2,temp) ){
-      triggInfo.push_back(temp);
-    }
-  
-myfile2.close();
-
-mtree->Fill();
 
 }
 
