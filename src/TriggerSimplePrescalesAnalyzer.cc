@@ -23,6 +23,13 @@
 #include <iostream>
 #include <iomanip>
 #include <boost/foreach.hpp>
+#include <iterator>
+#include <map> 
+#ifdef __MAKECINT__ 
+#pragma link C++ class map<std::string, std::vector<int>>; 
+#pragma link C++ class map<std::string, std::vector<int>>::iterator; 
+#pragma link C++ class pair<std::string, std::vector<int>>; 
+#endif// __MAKECINT__
 using namespace std;
 
 #include "FWCore/Framework/interface/Frameworkfwd.h"
@@ -45,6 +52,7 @@ using namespace std;
 #include <cassert>
 #include "TTree.h"
 #include "TFile.h"
+#include "TROOT.h"
 
 
 
@@ -100,6 +108,9 @@ class TriggerSimplePrescalesAnalyzer : public edm::EDAnalyzer {
       // ----------member data ---------------------------
       TTree *mtree;
       std::vector<int> triggervecs[1000];
+      std::vector<std::string> triggname;
+      std::map<std::string, std::vector<int>> triggmap;
+      int iter;
       
 };
 
@@ -152,13 +163,17 @@ HLTPathsByName_()
   edm::Service<TFileService> fs;
   mtree = fs->make<TTree>("Events", "Events");
   
-  unsigned int n = HLTPathsByName_.size();
+  //gROOT->ProcessLine("#include <map>");
   
-  for(unsigned int i = 0; i<n; i++) {
-    std::string name = HLTPathsByName_[i];
-    mtree->Branch(name.c_str(), &triggervecs[i]);
-    mtree->GetBranch(name.c_str())->SetTitle("Trigger Information");
+  //mtree->Branch("triggmap","map<std::string, std::vector<int>>", &triggmap);
+  //mtree->GetBranch("triggmap")->SetTitle("Trigger Information C++ map");
+
+  
+  for (unsigned int i=0; i!=1000; ++i) {
+       triggervecs[i].clear();
   }
+  
+  iter = 0;
   
 }
 
@@ -185,7 +200,7 @@ void TriggerSimplePrescalesAnalyzer::beginRun(edm::Run const& iRun, edm::EventSe
 {
     using namespace std;
     using namespace edm;
-  
+    
     bool changed(true);
     hltConfig_.init(iRun,iSetup,processName_,changed);
     
@@ -194,10 +209,7 @@ void TriggerSimplePrescalesAnalyzer::beginRun(edm::Run const& iRun, edm::EventSe
         cout<<"HLTConfig has changed . . . "<<endl;
         
     }
-    
-      
-        
-
+ 
 }//------------------- beginRun()
 
 
@@ -211,11 +223,6 @@ void TriggerSimplePrescalesAnalyzer::analyze(const edm::Event& iEvent, const edm
 {
    using namespace edm;
    using namespace std;
-   unsigned int n = HLTPathsByName_.size();
-   
-   for (unsigned int i=0; i!=n; ++i) {
-       triggervecs[i].clear();
-   }
    
    // Get event products: 
    // In the following, the code is trying to access the information 
@@ -254,19 +261,18 @@ void TriggerSimplePrescalesAnalyzer::analyze(const edm::Event& iEvent, const edm
       initPattern(*triggerResultsHandle_, iSetup, triggerNames);  
   }
   
+  unsigned int n = HLTPathsByName_.size();
 
-   //Loop over all triggers in the pattern
+  //Loop over all triggers in the pattern
    
-   for (unsigned int i=0; i!=n; ++i) {
-       triggervecs[i] = analyzeSimplePrescales(iEvent,iSetup,HLTPathsByName_[i]);
-       cout << "Estado: " << triggervecs[i].at(0) << endl;
-       cout << "L1T: " << triggervecs[i].at(1) << endl;
-       cout << "LHT: " << triggervecs[i].at(2) << endl;
-   }
-   
-   mtree->Fill();
+  for (unsigned int i=0; i!=n; ++i) {
+       triggervecs[iter] = analyzeSimplePrescales(iEvent,iSetup,HLTPathsByName_[i]);
+       triggname.push_back(HLTPathsByName_[i]);
+       //cout << "Iterador: " << iter << endl;
+       iter++;
+  }
 
-   return;
+  return;
 
 }//---------------------------analyze()
 
@@ -314,10 +320,10 @@ std::vector<int> TriggerSimplePrescalesAnalyzer::analyzeSimplePrescales(const ed
   // This can make the job very slow at the very begining....
   //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
   const std::pair<int,int> prescales(hltConfig_.prescaleValues(iEvent,iSetup,triggerName));
-  cout << "analyzeSimplePrescales: path "
-      << triggerName << " [" << triggerIndex << "] "
-      << "prescales L1T,HLT: " << prescales.first << "," << prescales.second
-      << endl;
+  //cout << "analyzeSimplePrescales: path "
+  //    << triggerName << " [" << triggerIndex << "] "
+  //    << "prescales L1T,HLT: " << prescales.first << "," << prescales.second
+  //    << endl;
       
   //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -331,11 +337,11 @@ std::vector<int> TriggerSimplePrescalesAnalyzer::analyzeSimplePrescales(const ed
   // Results from TriggerResults product
   //Uncomment the lines below
   //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  cout << " Trigger path status:"
-       << " WasRun=" << triggerResultsHandle_->wasrun(triggerIndex)
-       << " Accept=" << triggerResultsHandle_->accept(triggerIndex)
-       << " Error =" << triggerResultsHandle_->error(triggerIndex)
-       << endl;
+  //cout << " Trigger path status:"
+  //     << " WasRun=" << triggerResultsHandle_->wasrun(triggerIndex)
+  //     << " Accept=" << triggerResultsHandle_->accept(triggerIndex)
+  //     << " Error =" << triggerResultsHandle_->error(triggerIndex)
+  //    << endl;
        
   //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
   
@@ -423,6 +429,27 @@ TriggerSimplePrescalesAnalyzer::endJob()
 // ------------ method called when ending the processing of a run  ------------
 void TriggerSimplePrescalesAnalyzer::endRun(edm::Run const&, edm::EventSetup const&)
 {
+
+cout << "Trigger info 3-vector: [acceptance bit (0 if run but not accepted, 1 if accepted, 2 if in error), L1 prescale, HLT prescale]" << endl;
+
+for (int i = 0; i != iter; i++) { //Printing Trigger Data
+        cout <<i+1<<". Trigger Name: " << triggname[i] << " || Status: " << triggervecs[i].at(0) << " || L1: " << triggervecs[i].at(1) << " || HLT: " << triggervecs[i].at(2) << endl; 
+    }
+
+//cout << "Valor total para el Iterador: " << iter << endl; 
+
+// for(int i=0; i<iter; i++){
+//      std::string name = to_string(i+1) + ". " + triggname[i];
+//      triggmap.insert(pair<std::string, std::vector<int>>(name, triggervecs[i])); //Saving Data in the map.
+// }
+
+
+//for (unsigned int i = 0; i != triggmap.size(); i++) {
+//        std::string name = to_string(i+1) + ". " + triggname[i];
+//        cout <<i+1<<". TriggMap Name: " << triggname[i] << " || Status: " << triggmap[name].at(0)<< " || L1: " << triggmap[name].at(0)<< " || HLT: " << triggmap[name].at(0) << endl; //Printing Data.       
+//}
+
+//mtree->Fill();
 
 }
 

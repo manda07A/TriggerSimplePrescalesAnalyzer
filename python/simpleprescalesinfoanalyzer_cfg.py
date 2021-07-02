@@ -23,13 +23,13 @@ process.source = cms.Source("PoolSource",
 #needed to get the actual prescale values used from the global tag
 process.load('Configuration.StandardSequences.FrontierConditions_GlobalTag_cff')
 #process.GlobalTag.connect = cms.string('sqlite_file:/cvmfs/cms-opendata-conddb.cern.ch/FT_53_LV5_AN1_RUNA.db')
-process.GlobalTag.globaltag = 'FT_53_LV5_AN1::All'
+process.GlobalTag.globaltag = 'FT53_V21A_AN6::All'
 
 #configure the analyzer
 #inspired by https://github.com/cms-sw/cmssw/blob/CMSSW_5_3_X/HLTrigger/HLTfilters/interface/HLTHighLevel.h
-process.gettriggerinfo = cms.EDAnalyzer('TriggerSimplePrescalesAnalyzer',
+process.mytriggers = cms.EDAnalyzer('TriggerSimplePrescalesAnalyzer',
                               processName = cms.string("HLT"),
-                              triggerPatterns = cms.vstring("HLT_DoubleMu5_IsoMu5_v*","HLT_Mu13_Mu8_v*", "HLT_Mu22_TkMu22_v*"), #if left empty, all triggers will run        
+                              triggerPatterns = cms.vstring("HLT_Mu12_v*", "HLT_Photon20_CaloIdVL_v*", "HLT_Ele22_CaloIdL_CaloIsoVL_v*", "HLT_PFHT350_v*"), #if left empty, all triggers will run        
                               triggerResults = cms.InputTag("TriggerResults","","HLT"),
                               triggerEvent   = cms.InputTag("hltTriggerSummaryAOD","","HLT")                             
                               )
@@ -37,5 +37,5 @@ process.gettriggerinfo = cms.EDAnalyzer('TriggerSimplePrescalesAnalyzer',
 process.TFileService = cms.Service(
     "TFileService", fileName=cms.string("myoutput.root"))
 
-process.triggerinfo = cms.Path(process.gettriggerinfo)
+process.triggerinfo = cms.Path(process.mytriggers)
 process.schedule = cms.Schedule(process.triggerinfo)
